@@ -565,9 +565,17 @@ public final class DashboardView {
         enableDragAndResize(manualTile, "manual", 940, 780, 240, 120);
         enableDragAndResize(passingTile, "passing1771", 940, 1100, 280, 280);
 
+        pane.setPrefHeight(1440);
         StackPane wrapper = new StackPane(pane);
         StackPane.setMargin(pane, new Insets(0, 0, 0, 12));
-        return wrapper;
+
+        ScrollPane scroll = new ScrollPane(wrapper);
+        scroll.setFitToWidth(true);
+        scroll.setPannable(false);
+        scroll.setHbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setVbarPolicy(ScrollPane.ScrollBarPolicy.AS_NEEDED);
+        scroll.setStyle("-fx-background: transparent; -fx-background-color: transparent;");
+        return scroll;
     }
 
     private Parent buildTabbedCenter() {
