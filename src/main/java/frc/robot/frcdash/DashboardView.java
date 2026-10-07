@@ -579,8 +579,10 @@ public final class DashboardView {
     }
 
     private Parent buildTabbedCenter() {
-        dashboardContent = centerTiles();
+        Parent dashboardTiles = centerTiles();
         shooterContent = buildShooterControlTab();
+        VBox.setVgrow(dashboardTiles, Priority.ALWAYS);
+        dashboardContent = new VBox(8, buildShooterRpmBar(), dashboardTiles);
 
         tabContent.getChildren().addAll(dashboardContent, shooterContent);
         selectTab("Dashboard");
@@ -1551,6 +1553,7 @@ public final class DashboardView {
         double actual = shooterRpmSub != null ? shooterRpmSub.get() : 0.0;
         shooterTargetLabel.setText(String.format("Target: %.0f RPM", target));
         shooterActualLabel.setText(String.format("Actual: %.0f RPM", actual));
+        updateShooterRpmBarLabel();
 
         boolean atSpeed = Math.abs(actual - target) <= SHOOTER_RPM_TOLERANCE && target > 0.0;
         shooterStatusLabel.setText(atSpeed ? "AT SPEED" : "NOT READY");
@@ -2187,6 +2190,54 @@ public final class DashboardView {
         return String.format("%+.0f", value);
     }
 
+    private final Label shooterRpmBarLabel = new Label();
+
+    private void updateShooterRpmBarLabel() {
+        double actual = shooterRpmSub != null ? shooterRpmSub.get() : 0.0;
+        double setpoint = shooterRpmSlider != null ? shooterRpmSlider.getValue() : 0.0;
+        shooterRpmBarLabel.setText(String.format("%.0f / %.0f RPM", actual, setpoint));
+    }
+
+    private HBox buildShooterRpmBar() {
+        Label title = new Label("Shooter RPM");
+        title.setStyle("-fx-text-fill: #94a3b8; -fx-font-weight: 700;");
+
+        Button down = new Button("-500");
+        Button up = new Button("+500");
+        styleBoostButton(down, "#7f1d1d", "#ef4444", "#991b1b");
+        styleBoostButton(up, "#14532d", "#22c55e", "#166534");
+        shooterRpmBarLabel.setStyle("-fx-text-fill: #f8fafc; -fx-font-weight: 800; -fx-font-size: 18;");
+        shooterRpmBarLabel.setMinWidth(220);
+        shooterRpmBarLabel.setAlignment(Pos.CENTER);
+        updateShooterRpmBarLabel();
+
+        down.setOnAction(e -> { playClickAnimation(down); adjustShooterRpmBy(-500.0); });
+        up.setOnAction(e -> { playClickAnimation(up); adjustShooterRpmBy(500.0); });
+
+        HBox bar = new HBox(14, title, down, shooterRpmBarLabel, up);
+        bar.setAlignment(Pos.CENTER_LEFT);
+        bar.setPadding(new Insets(10, 16, 10, 16));
+        bar.setMaxWidth(520);
+        bar.setStyle("""
+            -fx-background-color: #0f172a;
+            -fx-background-radius: 16;
+            -fx-border-color: #1f2a44;
+            -fx-border-radius: 16;
+        """);
+        HBox.setMargin(bar, new Insets(0, 0, 0, 12));
+        return bar;
+    }
+
+    private void adjustShooterRpmBy(double delta) {
+        double next = Math.max(shooterRpmSlider.getMin(), Math.min(shooterRpmSlider.getMax(), shooterRpmSlider.getValue() + delta));
+        shooterRpmSlider.setValue(next);
+        updateShooterRpmBarLabel();
+        double boost = shooterBoostSlider != null ? shooterBoostSlider.getValue() : 0.0;
+        shooterTargetCmd.set(next + boost);
+        shooterRpmStatusLabel.setText(String.format("Last sent: %.0f RPM (boost %s RPM -> %.0f RPM)", next, formatSignedRpm(boost), next + boost));
+        appendLog(String.format("Shooter RPM set: %.0f RPM (boost %s RPM -> %.0f RPM)", next, formatSignedRpm(boost), next + boost));
+    }
+
     private Parent buildShooterControlTab() {
         Label title = new Label("Shooter Controls");
         title.setStyle("-fx-text-fill: #f8fafc; -fx-font-weight: 800; -fx-font-size: 18;");
@@ -2197,17 +2248,8 @@ public final class DashboardView {
         shooterRpmField.setPromptText("Type RPM (ex: 3200)");
         styleInputField(shooterRpmField);
 
-        Label rpmSliderLabel = new Label("RPM Slider");
-        rpmSliderLabel.setStyle("-fx-text-fill: #94a3b8; -fx-font-weight: 700;");
         shooterRpmSlider = new Slider(0.0, 6000.0, 0.0);
-        shooterRpmSlider.setShowTickMarks(true);
-        shooterRpmSlider.setShowTickLabels(true);
-        shooterRpmSlider.setMajorTickUnit(1000.0);
-        shooterRpmSlider.setMinorTickCount(4);
-        shooterRpmSlider.setBlockIncrement(50.0);
-        shooterRpmSlider.setPrefWidth(260);
-        shooterRpmSliderValueLabel = new Label("Slider: 0 RPM");
-        shooterRpmSliderValueLabel.setStyle("-fx-text-fill: #94a3b8; -fx-font-weight: 600;");
+        shooterRpmSliderValueLabel = new Label("0 RPM");
 
         Label hoodLabel = new Label("Hood Setpoint (deg)");
         hoodLabel.setStyle("-fx-text-fill: #cbd5e1; -fx-font-weight: 700;");
@@ -2292,13 +2334,13 @@ public final class DashboardView {
             updatingRpm[0] = true;
             double value = newV.doubleValue();
             shooterRpmField.setText(String.format("%.0f", value));
-            shooterRpmSliderValueLabel.setText(String.format("Slider: %.0f RPM", value));
+            shooterRpmSliderValueLabel.setText(String.format("%.0f RPM", value));
             updatingRpm[0] = false;
         });
         shooterRpmField.textProperty().addListener((obs, oldV, newV) -> {
             if (updatingRpm[0]) return;
             if (newV == null || newV.isBlank()) {
-                shooterRpmSliderValueLabel.setText("Slider: 0 RPM");
+                shooterRpmSliderValueLabel.setText("0 RPM");
                 return;
             }
             try {
@@ -2306,7 +2348,7 @@ public final class DashboardView {
                 double clamped = Math.max(shooterRpmSlider.getMin(), Math.min(shooterRpmSlider.getMax(), value));
                 updatingRpm[0] = true;
                 shooterRpmSlider.setValue(clamped);
-                shooterRpmSliderValueLabel.setText(String.format("Slider: %.0f RPM", clamped));
+                shooterRpmSliderValueLabel.setText(String.format("%.0f RPM", clamped));
                 updatingRpm[0] = false;
             } catch (NumberFormatException ignored) {
             }
@@ -2351,12 +2393,10 @@ public final class DashboardView {
         grid.getColumnConstraints().addAll(col1, col2);
         grid.add(rpmLabel, 0, 0);
         grid.add(shooterRpmField, 1, 0);
-        grid.add(rpmSliderLabel, 0, 1);
-        grid.add(new VBox(4, shooterRpmSlider, shooterRpmSliderValueLabel), 1, 1);
-        grid.add(hoodLabel, 0, 2);
-        grid.add(hoodSetpointField, 1, 2);
-        grid.add(hoodSliderLabel, 0, 3);
-        grid.add(new VBox(4, hoodSetpointSlider, hoodSliderValueLabel), 1, 3);
+        grid.add(hoodLabel, 0, 1);
+        grid.add(hoodSetpointField, 1, 1);
+        grid.add(hoodSliderLabel, 0, 2);
+        grid.add(new VBox(4, hoodSetpointSlider, hoodSliderValueLabel), 1, 2);
 
         spindexerStartButton = new Button("Start Spindexer");
         spindexerStartButton.setOnAction(e -> {
